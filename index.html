@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- 모바일 PWA / 웹앱 전용 메타 태그 -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -57,7 +56,7 @@
             position: relative;
             width: 100%;
             aspect-ratio: 4 / 3;
-            background-color: #e9ecef;
+            background-color: #000;
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
@@ -85,9 +84,9 @@
         .guide-box {
             width: 80%;
             height: 60%;
-            border: 2px dashed rgba(255, 255, 255, 0.8);
+            border: 2px dashed rgba(255, 255, 255, 0.9);
             border-radius: 12px;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
         }
 
         .controls {
@@ -176,7 +175,7 @@
             <button id="capture-btn">글자 확대하기</button>
         </div>
 
-        <div class="status" id="status-text">가이드 영역 안에 글자를 맞추고 버튼을 누르세요.</div>
+        <div class="status" id="status-text">네모 가이드 영역 안에 글자를 맞추고 버튼을 눌러주세요.</div>
 
         <div class="result-container" id="result-container">
             <span class="result-placeholder">확대된 글자가 여기에 표시됩니다.</span>
@@ -197,28 +196,43 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: { ideal: 'environment' },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     }
                 });
                 video.srcObject = stream;
             } catch (err) {
                 console.error("카메라 접근 실패:", err);
-                statusText.innerText = "카메라를 사용할 수 없습니다. 권한을 확인해주세요.";
+                statusText.innerText = "카메라를 사용할 수 없습니다. 브라우저 카메라 권한을 확인해주세요.";
                 captureBtn.disabled = true;
             }
         }
 
         async function processImage() {
+            if (!video.videoWidth || !video.videoHeight) {
+                statusText.innerText = "카메라가 아직 준비되지 않았습니다.";
+                return;
+            }
+
             captureBtn.disabled = true;
             statusText.innerText = "글자를 인식하고 확대하는 중...";
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // 가이드 영역(중앙 80% x 60%) 부분만 크롭하여 전달 (인식률 향상)
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
 
-            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const cropWidth = vw * 0.8;
+            const cropHeight = vh * 0.6;
+            const cropX = (vw - cropWidth) / 2;
+            const cropY = (vh - cropHeight) / 2;
+
+            canvas.width = cropWidth;
+            canvas.height = cropHeight;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
             const base64Data = imageDataUrl.split(',')[1];
 
             try {
@@ -236,11 +250,12 @@
                     resultContainer.innerHTML = `<div class="result-text">${escapeHtml(data.text)}</div>`;
                     statusText.innerText = "성공적으로 확대되었습니다.";
                 } else {
-                    statusText.innerText = "글자를 인식하지 못했습니다. 다시 시도해주세요.";
+                    const errorMsg = data.error || "글자를 인식하지 못했습니다.";
+                    statusText.innerText = `${errorMsg} (다시 시도해주세요)`;
                 }
             } catch (err) {
                 console.error("API 요청 오류:", err);
-                statusText.innerText = "오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+                statusText.innerText = "통신 중 오류가 발생했습니다. 네트워크 상태를 확인해주세요.";
             } finally {
                 captureBtn.disabled = false;
             }
