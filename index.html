@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>돋보기</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f8f9fa;
+            color: #212529;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px 16px;
+        }
+
+        header {
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+            padding: 12px 0 20px 0;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a73e8;
+            letter-spacing: -0.5px;
+        }
+
+        main {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background-color: #e9ecef;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e0e0e0;
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .scan-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .guide-box {
+            width: 80%;
+            height: 60%;
+            border: 2px dashed rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #ffffff;
+            background-color: #1a73e8;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 0 2px 6px rgba(26, 115, 232, 0.3);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background-color: #ced4da;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .result-container {
+            background-color: #ffffff;
+            border-radius: 16px;
+            padding: 24px 20px;
+            min-height: 180px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            word-break: break-all;
+        }
+
+        .result-placeholder {
+            color: #868e96;
+            font-size: 0.95rem;
+        }
+
+        .result-text {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #111111;
+            line-height: 1.4;
+        }
+
+        .status {
+            font-size: 0.85rem;
+            color: #6c757d;
+            text-align: center;
+            margin-top: -4px;
+        }
+
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>돋보기</h1>
+    </header>
+
+    <main>
+        <div class="camera-container">
+            <video id="webcam" autoplay playsinline muted></video>
+            <div class="scan-overlay">
+                <div class="guide-box"></div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="capture-btn">글자 확대하기</button>
+        </div>
+
+        <div class="status" id="status-text">가이드 영역 안에 글자를 맞추고 버튼을 누르세요.</div>
+
+        <div class="result-container" id="result-container">
+            <span class="result-placeholder">확대된 글자가 여기에 표시됩니다.</span>
+        </div>
+    </main>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('capture-btn');
+        const resultContainer = document.getElementById('result-container');
+        const statusText = document.getElementById('status-text');
+
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("카메라 접근 실패:", err);
+                statusText.innerText = "카메라를 사용할 수 없습니다. 권한을 확인해주세요.";
+                captureBtn.disabled = true;
+            }
+        }
+
+        async function processImage() {
+            captureBtn.disabled = true;
+            statusText.innerText = "글자를 인식하고 확대하는 중...";
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const base64Data = imageDataUrl.split(',')[1];
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image: base64Data })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.text) {
+                    resultContainer.innerHTML = `<div class="result-text">${escapeHtml(data.text)}</div>`;
+                    statusText.innerText = "성공적으로 확대되었습니다.";
+                } else {
+                    statusText.innerText = "글자를 인식하지 못했습니다. 다시 시도해주세요.";
+                }
+            } catch (err) {
+                console.error("API 요청 오류:", err);
+                statusText.innerText = "오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+            } finally {
+                captureBtn.disabled = false;
+            }
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        captureBtn.addEventListener('click', processImage);
+        window.addEventListener('load', initCamera);
+    </script>
+</body>
+</html>
